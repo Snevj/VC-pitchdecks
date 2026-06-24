@@ -1,12 +1,14 @@
-##Status: 
+## Status: 
 
 '''
 Current:-
 Next:-
 '''
 
-##Implementation
-financial-rag/
+## Implementation
+### starting with the architecture of the whole project
+
+<!-- financial-rag/
 │
 ├── data/                    # drop your PDFs here
 │
@@ -24,4 +26,6 @@ financial-rag/
 │
 ├── app.py                   # Gradio UI (Week 4 only)
 ├── requirements.txt
-└── .env                     # API keys (Cohere, LangSmith)
+└── .env                     # API keys (Cohere, LangSmith) -->
+[x]made the complete structure
+### now moving to making the basic RAG + PDF chunking process with the help of Vector DB
