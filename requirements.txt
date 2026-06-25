@@ -1,0 +1,4 @@
+PyMuPDF
+textacy==0.13.0
+click
+langchain-text-splitters

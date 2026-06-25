@@ -28,3 +28,4 @@ Next:-
 └── .env                     # API keys (Cohere, LangSmith) -->
 - [x] made the complete structure
 ### now moving to making the basic RAG + PDF chunking process with the help of Vector DB
+
