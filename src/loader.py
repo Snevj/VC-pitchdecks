@@ -10,7 +10,7 @@ import pymupdf
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 pdf_path = os.path.join(BASE_DIR, "data", "myfile.pdf")
 
-
+#this is basically the document parsing and extraction module that reads a PDF file, extracts text from each page
 def load_pdf(pdf_path: str) -> list[dict]:
     doc = pymupdf.open(pdf_path)
     pages = []
@@ -26,7 +26,7 @@ def load_pdf(pdf_path: str) -> list[dict]:
     print(f"Loaded {len(pages)} pages from {pdf_path}")
     return pages
 
-
+#this function normalizes the extracted text by cleaning up unicode characters, fixing hyphenated line breaks, and standardizing quotes.
 def normalize(pages: list[dict]) -> list[dict]:
     for page in pages:
         text = page["text"]
@@ -43,7 +43,7 @@ def normalize(pages: list[dict]) -> list[dict]:
         page["text"] = text
     return pages
 
-
+#if this script is run directly, this function will execute
 if __name__ == "__main__":
     raw_pages = load_pdf(pdf_path)
     normalized_pages = normalize(raw_pages)
