@@ -18,3 +18,5 @@ EMBED_MODEL = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")
 CHROMA_DIR = "./chroma_db"
 UPLOAD_DIR = "./uploads"
 MODEL_CHUNKER = os.getenv("MODEL_CHUNKER", "llama3.2:3b")
+COLLECTION_NAME = os.getenv("COLLECTION_NAME", "financial_docs")
+VECTOR_SIZE = int(os.getenv("VECTOR_SIZE", 384))

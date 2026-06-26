@@ -5,80 +5,62 @@ ChromaDB runs locally — no cloud, no cost.
 """
 import os
 import sys
-
+from qdrant_client.http import models as rest_models
+from qdrant_client import QdrantClient
 # Add project root to imports.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from config import VECTOR_DB_TYPE, QDRANT_URL, EMBED_MODEL, VECTOR_SIZE, COLLECTION_NAME
 
-# Shared config values.
-from config import VECTOR_DB_TYPE, QDRANT_URL, EMBED_MODEL
-
-COLLECTION_NAME = "financial_docs"  # str
 VECTOR_SIZE = 384  # int for MiniLM vectors
 
 _client = None
 
 def get_db_client():
-    """Return the cached vector DB client."""
     global _client
-    if _client is not None:
-        return _client
-
-    if VECTOR_DB_TYPE == "chroma":
-        import chromadb
-        print("Initializing Local ChromaDB Engine...")
-        _client = chromadb.PersistentClient(path="./chroma_db")
-        
-    elif VECTOR_DB_TYPE == "qdrant":
-        from qdrant_client import QdrantClient
-        from qdrant_client.models import PointStruct
-        # Path = local. URL = remote.
-        if QDRANT_URL.startswith("http"):
-            print(f"Connecting to Qdrant Server over network at: {QDRANT_URL}")
-            _client = QdrantClient(url=QDRANT_URL)
-        else:
+    
+    # 🛠️ ONLY create a new client if one doesn't exist yet!
+    if _client is None:
+        if VECTOR_DB_TYPE == "qdrant":
             print("Running Qdrant in Local Embedded Mode...")
             _client = QdrantClient(path="./qdrant_db")
-            
-        # Create the collection once.
-        if not _client.collection_exists(collection_name=COLLECTION_NAME):
-            from qdrant_client.models import Distance, VectorParams
-            _client.create_collection(
-                collection_name=COLLECTION_NAME,
-                vectors_config=VectorParams(size=VECTOR_SIZE, distance=Distance.COSINE)
-            )
+        else:
+            # Your ChromaDB or other initialization logic here
+            pass
             
     return _client
-
 def add_chunks(chunks: list[dict], embeddings: list[list[float]]):
-    """
-    Store chunk text and vectors.
-    chunks: list[dict]
-    embeddings: list[list[float]]
-    """
-    from qdrant_client.models import PointStruct
-
-    client = get_db_client()
-    points = []
-
-    # Turn each chunk into a Qdrant point.
-    for idx, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
-        # Fallback id if chunk_id is missing.
-        point_id = chunk.get("chunk_id", idx)
-        
-        points.append(
-            PointStruct(
-                id=point_id,
-                vector=embedding,
-                payload={
-                    "text": chunk["text"],
-                    "page_num": chunk["page_num"]
-                }
+    client = get_db_client() # Or whatever your database initialization wrapper is called
+    
+    # ── 🛠️ ADD THIS SELF-HEALING COLLECTION CHECK ──────────────────────────
+    # Check if the target collection exists in memory/storage
+    collections_response = client.get_collections()
+    existing_collections = [col.name for col in collections_response.collections]
+    
+    if COLLECTION_NAME not in existing_collections:
+        print(f" Creating fresh Qdrant Collection: '{COLLECTION_NAME}' (384 Dimensions)...")
+        client.create_collection(
+            collection_name=COLLECTION_NAME,
+            vectors_config=rest_models.VectorParams(
+                size=384,  # Matches all-MiniLM-L6-v2 vector dimension footprint
+                distance=rest_models.Distance.COSINE
             )
         )
+    # ─────────────────────────────────────────────────────────────────────────
 
-    # Bulk write.
+    # Your existing code below handles building points and uploading...
+    points = []
+    for i, (chunk, embedding) in enumerate(zip(chunks, embeddings)):
+        # Generate a unique point id or use a UUID
+        points.append(
+            rest_models.PointStruct(
+                id=i, 
+                vector=embedding, 
+                payload={"text": chunk["text"], "page_num": chunk["page_num"]}
+            )
+        )
+        
     client.upsert(collection_name=COLLECTION_NAME, points=points)
-    print(f"Stored {len(chunks)} chunks in Qdrant.")
+    print(f"✅ Successfully synchronized and stored {len(chunks)} chunks in database.")
 
 #top-7 chunks which are most suitable for the query are returned by this function
 def query_chunks(query_embedding: list[float], top_k: int = 7) -> list[dict]:

@@ -4,9 +4,9 @@ Week 1: basic top-k retrieval from ChromaDB
 Week 2: adds Cohere reranking to compress 15 chunks → top 3
 """
 
-from embedder import embed_query
-from vectorstore import query_chunks
 
+from src.embedder import embed_query
+from src.vectorstore import query_chunks
 
 def retrieve(query: str, top_k: int = 5) -> list[dict]:
     """

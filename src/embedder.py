@@ -2,6 +2,9 @@ import os
 import sys
 from sentence_transformers import SentenceTransformer
 
+CURRENT_DIR = os.path.dirname(os.path.abspath(__file__))
+if CURRENT_DIR not in sys.path:
+    sys.path.insert(0, CURRENT_DIR)
 #this below line will prompt the python file to look inside the root folder for the config.py file
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import EMBED_MODEL

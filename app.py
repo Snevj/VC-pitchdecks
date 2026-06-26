@@ -13,6 +13,7 @@ from src.retriever import retrieve_and_rerank
 from src.generator import generate_with_citations
 
 
+
 def index_document(pdf_file) -> str:
     """Called when user uploads a PDF."""
     if pdf_file is None:
