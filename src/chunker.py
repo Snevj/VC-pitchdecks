@@ -23,7 +23,7 @@ def chunk_text(pages: list[dict]) -> list[dict]:
     text_splitter = RecursiveCharacterTextSplitter.from_tiktoken_encoder(
         encoding_name="cl100k_base",  
         chunk_size=512,
-        chunk_overlap=50,
+        chunk_overlap=100,
         separators=["\n\n", "\n", "•", " ", ""]
     )
 
