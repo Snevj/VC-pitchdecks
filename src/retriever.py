@@ -24,11 +24,8 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
 
 def retrieve_and_rerank(query: str, top_k_retrieve: int = 15, top_k_final: int = 3) -> list[dict]:
     """
-    Step 1: retrieve top 15 chunks from ChromaDB (broad net)
+    Step 1: retrieve top 15 chunks from ChromaDB/Qdrant (broad net)
     Step 2: Cohere Rerank compresses them to top 3 (precision)
-
-    Requires: pip install cohere
-    Requires: COHERE_API_KEY in your .env file
     """
     import os
     import cohere

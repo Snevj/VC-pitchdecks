@@ -7,9 +7,11 @@ Builds a prompt from retrieved chunks and calls Ollama (free, local).
 
 import ollama
 import tiktoken
-
-MODEL = "llama3.2:3b"
-
+import config
+from transformers import AutoTokenizer
+MODEL = config.LLM_MODEL
+"""
+"""
 # basic generation(prototype only)
 def generate(query: str, chunks: list[dict]) -> str:
     """
