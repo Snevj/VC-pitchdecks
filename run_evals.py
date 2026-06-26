@@ -1,14 +1,12 @@
-"""import os
+import os
 import json
 from dotenv import load_dotenv
 load_dotenv()
 
 from datasets import Dataset
 from ragas import evaluate
-from openai import OpenAI
 from ragas.llms import llm_factory
 from ragas.embeddings import HuggingFaceEmbeddings as RagasHFEmbeddings
-from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
 from openai import OpenAI
 from ragas.llms import LangchainLLMWrapper
 from ragas.embeddings import LangchainEmbeddingsWrapper
@@ -52,7 +50,7 @@ def evaluate_pipeline():
     evaluator_llm = LangchainLLMWrapper(raw_llm)
     evaluator_embeddings = LangchainEmbeddingsWrapper(raw_embeddings)
 
-    print("📊 Calculating RAGAS metrics in the cloud via Groq...")
+    print("Calculating RAGAS metrics in the cloud via Groq...")
     scores = evaluate(
         dataset=dataset,
         # 🛠️ PASS THE PROPERLY WRAPPED INSTANCES INTO EACH CONSTRUCTOR INDIVIDUALLY
@@ -65,7 +63,7 @@ def evaluate_pipeline():
         embeddings=evaluator_embeddings 
     )
     
-    print("\n🏆 🎉 ── FINAL EVALUATION SCORES ──")
+    print("\nFINAL EVALUATION SCORES")
     print(json.dumps(scores, indent=4))
     return scores
 
@@ -87,12 +85,12 @@ from src.generator import generate_with_citations
 
 # Initialize the cloud judge directly via the official Groq client
 if not os.getenv("GROQ_API_KEY"):
-    raise ValueError("❌ GROQ_API_KEY not found in your .env file!")
+    raise ValueError("GROQ_API_KEY not found in your .env file!")
 
 groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
 def ask_groq_judge(system_prompt: str, user_prompt: str) -> float:
-    """Helper to get a clean mathematical score from our Groq cloud judge."""
+    #Helper to get a clean mathematical score from our Groq cloud judge.
     try:
         response = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
@@ -111,15 +109,15 @@ def ask_groq_judge(system_prompt: str, user_prompt: str) -> float:
                 return min(1.0, max(0.0, float(clean_word)))
         return 0.0
     except Exception as e:
-        print(f"⚠️ Judging skip due to API rate limit: {e}")
+        print(f"Judging skip due to API rate limit: {e}")
         return 0.0
 
 def run_custom_evaluations():
-    print("🧪 Loading test evaluation dataset...")
+    print("Loading test evaluation dataset...")
     with open("evals/test_questions.json", "r") as f:
         test_cases = json.load(f)
 
-    print(f"🏃‍♂️ Processing {len(test_cases)} evaluation cases through the live local RAG index...")
+    print(f"Processing {len(test_cases)} evaluation cases through the live local RAG index...")
     
     total_faithfulness = 0.0
     total_relevancy = 0.0
@@ -171,10 +169,10 @@ def run_custom_evaluations():
     avg_faith = total_faithfulness / len(test_cases)
     avg_rel = total_relevancy / len(test_cases)
 
-    print("\n🏆 🎉 ── FINAL EVALUATION SCORES ──")
+    print("\n ── FINAL EVALUATION SCORES ──")
     print(f"==========================================")
-    print(f"📈 Average Pipeline Faithfulness:  {avg_faith:.4f}")
-    print(f"🎯 Average Pipeline Relevancy:     {avg_rel:.4f}")
+    print(f"Average Pipeline Faithfulness:  {avg_faith:.4f}")
+    print(f"Average Pipeline Relevancy:     {avg_rel:.4f}")
     print(f"==========================================")
 
 
@@ -186,3 +184,4 @@ if __name__ == "__main__":
         os.system("pip install groq")
         
     run_custom_evaluations()
+"""

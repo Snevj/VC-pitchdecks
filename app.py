@@ -5,12 +5,15 @@ Run with: python app.py
 """
 
 import gradio as gr
+from rich.prompt import result
 from src.loader import load_pdf
-from src.chunker import chunk_text  # 🛠️ Fixed function name mismatch
+from src.chunker import chunk_text  
 from src.embedder import embed_texts
 from src.vectorstore import add_chunks, clear_collection
 from src.retriever import retrieve_and_rerank
 from src.generator import generate_with_citations
+
+
 
 
 
@@ -21,11 +24,12 @@ def index_document(pdf_file) -> str:
 
     clear_collection()
     pages = load_pdf(pdf_file.name)
-    chunks = chunk_text(pages)  # 🛠️ Fixed mapping here to use chunk_text
+    chunks = chunk_text(pages)  
     embeddings = embed_texts([c["text"] for c in chunks])
     add_chunks(chunks, embeddings)
 
     return f"Indexed {len(chunks)} chunks from {len(pages)} pages. Ready to answer questions."
+
 
 
 def answer_question(question: str) -> tuple[str, str]:
@@ -33,17 +37,19 @@ def answer_question(question: str) -> tuple[str, str]:
     if not question.strip():
         return "Please enter a question.", ""
 
-    chunks = retrieve_and_rerank(question, top_k_retrieve=15, top_k_final=3)
-    result = generate_with_citations(question, chunks)
-
-    answer = result["answer"]
+    # 1. Retrieve and rerank chunks using your retriever module
+    reranked_chunks = retrieve_and_rerank(question, top_k_retrieve=15, top_k_final=3)
     
-    # 🛠️ De-duplicate page references so it prints cleanly (e.g., "Pages referenced: 3, 5")
-    unique_pages = sorted(list(set(result['sources'])))
-    sources = f"Pages referenced: {', '.join(str(p) for p in unique_pages)}\nTokens used: {result['token_count']}"
+    # 2. Pass those exact reranked chunks into your updated Groq generator
+    result = generate_with_citations(question, reranked_chunks)
 
-    return answer, sources
+    # 3. Format the metadata summary source block using Groq's new keys
+    sources_summary = (
+        f"Pages referenced: {', '.join(str(p) for p in result['pages_referenced'])}\n"
+        f"Tokens (approx): {result['tokens_used']}"
+    )
 
+    return result["answer"], sources_summary
 
 # ── UI layout ─────────────────────────────────────────────────────────────────
 with gr.Blocks(title="Financial RAG", theme=gr.themes.Monochrome()) as demo:

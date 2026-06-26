@@ -5,30 +5,117 @@ Builds a prompt from retrieved chunks and calls Ollama (free, local).
 :-adds source citations and token counting
 """
 
-import ollama
-import tiktoken
-import config
-from transformers import AutoTokenizer
-MODEL = config.LLM_MODEL
-"""
+# import ollama
+# import tiktoken
+# import config
+# from transformers import AutoTokenizer
+# from langchain_groq import ChatGroq
+# MODEL = config.LLM_MODEL
+
+
+import os
+from dotenv import load_dotenv
+from langchain_core.prompts import ChatPromptTemplate
+# ── 🛠️ NEW IMPORT FOR GROQ ──────────────────────────────────────────────────
+from langchain_groq import ChatGroq 
+
+load_dotenv()
+
+def generate_with_citations(query: str, retrieved_chunks: list) -> dict:
+    # 1. Compile the context text block from chunks
+    context_text = "\n\n".join([
+        f"[Source {i+1}]: {chunk['text']} (Page {chunk['metadata'].get('page', 'Unknown')})"
+        for i, chunk in enumerate(retrieved_chunks)
+    ])
+    
+    # 2. Build the strict system prompt
+    prompt = ChatPromptTemplate.from_messages([
+        ("system", (
+            "You are an elite financial analyst. Answer the user's question using ONLY the provided context blocks. "
+            "If the context does not contain the answer, say 'I cannot find that information in the document.'\n\n"
+            f"Context:\n{context_text}"
+        )),
+        ("human", "{question}")
+    ])
+    
+    # 3. 🛠️ NEW: Initialize Groq instead of Ollama
+    llm = ChatGroq(
+        model="llama-3.3-70b-versatile", # Or "llama3-8b-8192" if you want ultra-low latency
+        api_key=os.getenv("GROQ_API_KEY"),
+        temperature=0.0
+    )
+    
+    # 4. Chain the pipeline execution execution
+    chain = prompt | llm
+    
+    print(f"Generating answer using cloud Llama via Groq...")
+    response = chain.invoke({"question": query})
+    
+    # Track unique pages referenced
+    pages = sorted(list(set([c['metadata'].get('page', '?') for c in retrieved_chunks])))
+    
+    return {
+        "answer": response.content,
+        "pages_referenced": pages,
+        "tokens_used": len(response.content.split()) # Approximate fallback tracking
+    }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 """
 # basic generation(prototype only)
 def generate(query: str, chunks: list[dict]) -> str:
-    """
+    ""
     Builds a prompt from chunks + query, calls Ollama, returns answer.
-    """
+    ""
     context = "\n\n".join([c["text"] for c in chunks])
 
-    prompt = f"""You are a financial analyst assistant.
-Answer the question using ONLY the context provided below.
-If the answer is not in the context, say "I don't have enough information to answer this."
+    prompt = f""You are a financial analyst assistant.
+    Answer the question using ONLY the context provided below.
+    If the answer is not in the context, say "I don't have enough information to answer this."
 
-Context:
-{context}
+    Context:
+    {context}
 
-Question: {query}
+    Question: {query}
 
-Answer:"""
+    Answer:""
 
     response = ollama.chat(
         model=MODEL,
@@ -45,29 +132,29 @@ Answer:"""
 
 # generation with citations + token count (what we will be using in the final app )
 def generate_with_citations(query: str, chunks: list[dict]) -> dict:
-    """
+    ""
     Same as generate() but:
     - Tells the model to cite page numbers
     - Counts tokens before sending (so you understand cost)
     - Returns answer + sources + token count
-    """
+    ""
     # build numbered context with page references
     context_parts = []
     for i, c in enumerate(chunks):
         context_parts.append(f"[Source {i+1}, Page {c['page_num']}]:\n{c['text']}")
     context = "\n\n".join(context_parts)
 
-    prompt = f"""You are a financial analyst assistant.
-Answer the question using ONLY the context provided.
-After your answer, list which sources you used (e.g. "Sources used: Source 1, Source 3").
-If the answer is not in the context, say "I don't have enough information."
+    prompt = f""You are a financial analyst assistant.
+    Answer the question using ONLY the context provided.
+    After your answer, list which sources you used (e.g. "Sources used: Source 1, Source 3").
+    If the answer is not in the context, say "I don't have enough information."
 
-Context:
-{context}
+    Context:
+    {context}
 
-Question: {query}
+    Question: {query}
 
-Answer:"""
+    Answer:""
 
     # count tokens before sending (Week 2 — token awareness)
     try:
@@ -109,4 +196,4 @@ if __name__ == "__main__":
     print("\n--- With citations ---")
     result = generate_with_citations("What was the revenue growth?", fake_chunks)
     print(result["answer"])
-    print(f"Token count: {result['token_count']}")
+    print(f"Token count: {result['token_count']}")"""
