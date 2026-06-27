@@ -26,7 +26,7 @@ Ask question → Vector Search (top 15) → Cohere Rerank (top 3) → Groq LLM �
 | Embeddings | `all-MiniLM-L6-v2` (local) | Free, zero-latency semantic vectors |
 | Vector Store | Qdrant (embedded) | Cosine similarity search |
 | Reranking | Cohere Rerank API | Compress top-15 → top-3 chunks |
-| Generation | Groq (Llama-3.3-70B) | Fast cloud LLM inference |
+| Generation | Groq (`llama-3.3-70b-versatile`) | Fast cloud LLM inference |
 | Evaluation | RAGAS | Faithfulness + answer relevancy scoring |
 | Observability | LangSmith | Full pipeline tracing |
 | Deployment | Docker → AWS EC2 | Containerized cloud deployment |
@@ -61,7 +61,6 @@ finrag/
 ### Prerequisites
 
 - Python 3.11+
-- [Ollama](https://ollama.ai) installed and running locally
 - API keys for Cohere (free), Groq (free), LangSmith (free)
 
 ### Installation
@@ -92,9 +91,6 @@ LANGCHAIN_PROJECT=finrag
 ### Run Locally
 
 ```bash
-# Pull the LLM (first time only)
-ollama pull llama3.2:3b
-
 # Start the API server
 python app.py
 
