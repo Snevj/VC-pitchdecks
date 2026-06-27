@@ -3,17 +3,14 @@ app.py
 Week 4: Gradio UI — upload a PDF, ask questions, see answers + citations + faithfulness score.
 Run with: python app.py
 """
-
+import os
 import gradio as gr
-from rich.prompt import result
 from src.loader import load_pdf
 from src.chunker import chunk_text  
 from src.embedder import embed_texts
 from src.vectorstore import add_chunks, clear_collection
 from src.retriever import retrieve_and_rerank
 from src.generator import generate_with_citations
-
-
 
 
 
@@ -52,24 +49,44 @@ def answer_question(question: str) -> tuple[str, str]:
     return result["answer"], sources_summary
 
 # ── UI layout ─────────────────────────────────────────────────────────────────
-with gr.Blocks(title="Financial RAG", theme=gr.themes.Monochrome()) as demo:
-    gr.Markdown("# Financial Document Q&A")
-    gr.Markdown("Upload an earnings report or annual report PDF, then ask questions about it.")
+from fastapi import FastAPI, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+import tempfile, uvicorn
 
-    with gr.Row():
-        with gr.Column(scale=1):
-            pdf_input = gr.File(label="Upload PDF", file_types=[".pdf"])
-            index_btn = gr.Button("Index Document", variant="primary")
-            index_status = gr.Textbox(label="Status", interactive=False)
+app = FastAPI()
 
-        with gr.Column(scale=2):
-            question_input = gr.Textbox(label="Your Question", placeholder="What was the revenue growth?", lines=2)
-            ask_btn = gr.Button("Ask", variant="primary")
-            answer_output = gr.Textbox(label="Answer", lines=6, interactive=False)
-            sources_output = gr.Textbox(label="Sources", lines=2, interactive=False)
+app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
-    index_btn.click(fn=index_document, inputs=[pdf_input], outputs=[index_status])
-    ask_btn.click(fn=answer_question, inputs=[question_input], outputs=[answer_output, sources_output])
+# Serve your HTML file at localhost:8000/
+app.mount("/", StaticFiles(directory=".", html=True), name="static")
 
-if __name__ == "__main__":
-    demo.launch()
+@app.post("/index")
+async def index_endpoint(file: UploadFile = File(...)):
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(await file.read())
+        tmp_path = tmp.name
+
+    clear_collection()
+    pages = load_pdf(tmp_path)
+    chunks = chunk_text(pages)
+    embeddings = embed_texts([c["text"] for c in chunks])
+    add_chunks(chunks, embeddings)
+
+    return {"chunks": len(chunks), "pages": len(pages)}
+
+class Question(BaseModel):
+    question: str
+
+@app.post("/ask")
+async def ask_endpoint(body: Question):
+    reranked_chunks = retrieve_and_rerank(body.question, top_k_retrieve=15, top_k_final=3)
+    result = generate_with_citations(body.question, reranked_chunks)
+    return {
+        "answer": result["answer"],
+        "pages_referenced": result["pages_referenced"],
+        "tokens_used": result["tokens_used"]
+    }
+
+uvicorn.run(app, host="0.0.0.0", port=8000)

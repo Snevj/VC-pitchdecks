@@ -12,23 +12,21 @@ Builds a prompt from retrieved chunks and calls Ollama (free, local).
 # from langchain_groq import ChatGroq
 # MODEL = config.LLM_MODEL
 
-
 import os
 from dotenv import load_dotenv
 from langchain_core.prompts import ChatPromptTemplate
-# ── 🛠️ NEW IMPORT FOR GROQ ──────────────────────────────────────────────────
-from langchain_groq import ChatGroq 
+from langchain_groq import ChatGroq
 
 load_dotenv()
 
 def generate_with_citations(query: str, retrieved_chunks: list) -> dict:
-    # 1. Compile the context text block from chunks
+    # 1. Compile context with the correct 'page_num' key mapping
     context_text = "\n\n".join([
-        f"[Source {i+1}]: {chunk['text']} (Page {chunk['metadata'].get('page', 'Unknown')})"
+        f"[Source {i+1}]: {chunk.get('text', '')} (Page {chunk.get('page_num', 'Unknown')})"
         for i, chunk in enumerate(retrieved_chunks)
     ])
     
-    # 2. Build the strict system prompt
+    # 2. Build system prompt
     prompt = ChatPromptTemplate.from_messages([
         ("system", (
             "You are an elite financial analyst. Answer the user's question using ONLY the provided context blocks. "
@@ -38,38 +36,32 @@ def generate_with_citations(query: str, retrieved_chunks: list) -> dict:
         ("human", "{question}")
     ])
     
-    # 3. 🛠️ NEW: Initialize Groq instead of Ollama
+    # 3. Cloud LLM via Groq
     llm = ChatGroq(
-        model="llama-3.3-70b-versatile", # Or "llama3-8b-8192" if you want ultra-low latency
+        model="llama-3.3-70b-versatile",
         api_key=os.getenv("GROQ_API_KEY"),
         temperature=0.0
     )
     
-    # 4. Chain the pipeline execution execution
     chain = prompt | llm
     
-    print(f"Generating answer using cloud Llama via Groq...")
+    print(f"🧠 Generating answer using cloud Llama via Groq...")
     response = chain.invoke({"question": query})
     
-    # Track unique pages referenced
-    pages = sorted(list(set([c['metadata'].get('page', '?') for c in retrieved_chunks])))
+    # 4. Extract and sort unique page numbers safely from 'page_num'
+    raw_pages = []
+    for chunk in retrieved_chunks:
+        p = chunk.get('page_num')
+        if p is not None:
+            raw_pages.append(p)
+            
+    pages = sorted(list(set(raw_pages))) if raw_pages else ["?"]
     
     return {
         "answer": response.content,
         "pages_referenced": pages,
-        "tokens_used": len(response.content.split()) # Approximate fallback tracking
+        "tokens_used": len(response.content.split())
     }
-
-
-
-
-
-
-
-
-
-
-
 
 
 

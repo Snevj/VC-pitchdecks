@@ -7,7 +7,7 @@ import os
 import sys
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from config import MODEL_CHUNKER
+from config import UPLOAD_DIR, COLLECTION_NAME
 
 # Keep project root relative path mappings clean
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

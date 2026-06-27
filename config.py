@@ -10,13 +10,12 @@ QDRANT_URL = os.getenv("QDRANT_URL", "./qdrant_db")
 
 # RAG Configurations
 DATABASE_URL = os.getenv("DATABASE_URL")
-OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MODEL", "llama3.2:3b")
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+LLM_MODEL = os.getenv("LLM_MODEL", "llama-3.3-70b-versatile") 
 EMBED_MODEL = os.getenv("EMBED_MODEL", "all-MiniLM-L6-v2")
 
 # Directory Structures
-CHROMA_DIR = "./chroma_db"
+QDRANT_DIR = "./qdrant_db"   # Swapped from Chroma to Qdrant!
 UPLOAD_DIR = "./uploads"
-MODEL_CHUNKER = os.getenv("MODEL_CHUNKER", "llama3.2:3b")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "financial_docs")
 VECTOR_SIZE = int(os.getenv("VECTOR_SIZE", 384))

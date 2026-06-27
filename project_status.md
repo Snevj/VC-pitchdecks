@@ -31,7 +31,7 @@ Next:-will implement a better frontend for the webpage
 - [x] made the advanced RAG pipeline 
 - [x] made the advanced RAG pipeline with reranking algo and LangSmith nodes
 - [x] making the evals of the current pipeline
-- [x] improvung the frontend
+- [x] improving the frontend
 - [] dockerising the project
 - [] hosting it on AWS
 ### now moving to making the basic RAG + PDF chunking process with the help of Vector DB
@@ -40,4 +40,8 @@ Made the basic pipeline for the project using RAG
 ### moving to advanced RAG pipeline and PDF chunking
 Making the document loader using `pymupdf` which is independent, then initiated the chunking process with `RecursiveCharacterTextSplitter` from langchain. This followed by embedding of the chunks using `SentenceTransformer` using Hugging Face and this followed by a vector storage and this I kind of kept optional between `ChromaDB` and `Qdrant`, depending upon the use case, for local env and testing ChromaDB is good, but for scale Qdrant works better. And now comes the retrievel part, for this I used the embedding i used in the embedder and the `cohere` class for reranking the chunks retrieved. Now comes the generator file which uses llama3.2:3b model and `Ollama` and `tiktoken` for chat generation
 
-### 
+### Inititated the frontend 
+Now making the whole project live with some frint end and testing the evals of this model
+
+### changing the local setup
+Changing the ollama setup to groq API for faster answers and better mobility of the whole project
