@@ -9,6 +9,10 @@ if CURRENT_DIR not in sys.path:
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import EMBED_MODEL
 
+# Project tracing
+from langsmith_helper import get_traceable
+traceable = get_traceable()
+
 _model = None
 #loading the modal only once and storing it in a global variable to avoid reloading it multiple times
 def get_model() -> SentenceTransformer:
@@ -19,11 +23,13 @@ def get_model() -> SentenceTransformer:
     return _model
 #These functions isolate the raw embedding step. They grab the initialized model and call .encode()
 #also converts into a python compatible list of floats for easier handling and storage
+@traceable(name="embed_texts")
 def embed_texts(texts: list[str]) -> list[list[float]]:
     model = get_model()
     embeddings = model.encode(texts, show_progress_bar=False)
     return embeddings.tolist()
 
+@traceable(name="embed_query")
 def embed_query(query: str) -> list[float]:
     model = get_model()
     return model.encode(query).tolist()

@@ -14,6 +14,23 @@ from dotenv import load_dotenv
 # Ensure configuration constants at root can be imported cleanly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
+from langsmith_helper import get_traceable
+# Central traceable decorator for project-wide use (no-op if disabled)
+traceable = get_traceable()
+
+# Enable LangSmith tracing when LANGSMITH_ENABLED=1/true and package is installed.
+if os.getenv("LANGSMITH_ENABLED", "false").lower() in ("1", "true"):
+    try:
+        from langsmith import traceable  # real tracer
+    except Exception:
+        def traceable(name=None):
+            def deco(f): return f
+            return deco
+else:
+    def traceable(name=None):
+        def deco(f): return f
+        return deco
+    
 
 from loader import load_pdf
 from chunker import chunk_text
@@ -74,8 +91,6 @@ def query_week3(question: str) -> dict:
     """
     Same as Week 2 but wrapped inside a LangSmith tracing tree.
     """
-    from langsmith import traceable
-
     @traceable(name="rag_pipeline")
     def _run(question):
         chunks = retrieve_and_rerank(question, top_k_retrieve=15, top_k_final=3)
@@ -98,6 +113,12 @@ def run_evals():
     from ragas.metrics import faithfulness, answer_relevancy, context_precision
     from datasets import Dataset
 
+    # Quick environment pre-checks to give helpful errors
+    import os
+    if not os.getenv("OPENAI_API_KEY"):
+        print("Missing OPENAI_API_KEY. Set it in .env or export OPENAI_API_KEY=... to run evals.")
+        return None
+
     with open("evals/test_questions.json") as f:
         test_cases = json.load(f)
 
@@ -106,13 +127,22 @@ def run_evals():
         result = query_week3(tc["question"])
         rows.append({
             "question": tc["question"],
-            "answer": result["answer"],
-            "contexts": result["contexts"],
+            "answer": result.get("answer") if isinstance(result, dict) else None,
+            "contexts": result.get("contexts") if isinstance(result, dict) else None,
             "ground_truth": tc["answer"]  # Hand-crafted validation reference ground truth
         })
 
     dataset = Dataset.from_list(rows)
-    scores = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision])
+
+    try:
+        scores = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision])
+    except Exception as e:
+        # Surface friendly guidance for common OpenAI errors (quota / auth / rate limits)
+        err_msg = str(e)
+        print("\nRAGAS evaluation failed:", err_msg)
+        print("If this is an OpenAI quota or billing error, check your plan and billing dashboard.")
+        print("You can still run Week 1/2 flows locally without OpenAI by running the index/query paths.")
+        return None
 
     print("\n── RAGAS Scores ──────────────────")
     print(scores)

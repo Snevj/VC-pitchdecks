@@ -8,6 +8,11 @@ Week 2: adds Cohere reranking to compress 15 chunks → top 3
 from src.embedder import embed_query
 from src.vectorstore import query_chunks
 
+# Project-wide tracing decorator
+from langsmith_helper import get_traceable
+traceable = get_traceable()
+
+@traceable(name="retrieve")
 def retrieve(query: str, top_k: int = 5) -> list[dict]:
     """
     Embeds the query, searches ChromaDB, returns top_k chunks.
@@ -22,6 +27,7 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
     return chunks
 
 
+@traceable(name="retrieve_and_rerank")
 def retrieve_and_rerank(query: str, top_k_retrieve: int = 15, top_k_final: int = 3) -> list[dict]:
     """
     Step 1: retrieve top 15 chunks from ChromaDB/Qdrant (broad net)

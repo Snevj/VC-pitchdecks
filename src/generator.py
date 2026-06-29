@@ -19,6 +19,11 @@ from langchain_groq import ChatGroq
 
 load_dotenv()
 
+# Project tracing
+from langsmith_helper import get_traceable
+traceable = get_traceable()
+
+@traceable(name="generate_with_citations")
 def generate_with_citations(query: str, retrieved_chunks: list) -> dict:
     # 1. Compile context with the correct 'page_num' key mapping
     context_text = "\n\n".join([
@@ -62,6 +67,16 @@ def generate_with_citations(query: str, retrieved_chunks: list) -> dict:
         "pages_referenced": pages,
         "tokens_used": len(response.content.split())
     }
+
+
+# Lightweight wrapper used elsewhere in the codebase.
+@traceable(name="generate")
+def generate(query: str, chunks: list[dict]) -> str:
+    """Return a plain answer string by delegating to generate_with_citations()."""
+    result = generate_with_citations(query, chunks)
+    if isinstance(result, dict):
+        return result.get("answer", "")
+    return str(result)
 
 
 

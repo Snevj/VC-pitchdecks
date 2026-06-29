@@ -1,3 +1,4 @@
+"""
 import os
 import json
 from dotenv import load_dotenv
@@ -39,28 +40,65 @@ def evaluate_pipeline():
 
     dataset = Dataset.from_list(evaluation_rows)
     
-    # ── 🛠️ INITIALIZE CHAT AND EMBEDDING ENGINES ─────────────────────────────
-    raw_llm = ChatGroq(
-        model="llama-3.3-70b-versatile",
-        api_key=os.getenv("GROQ_API_KEY")
-    )
-    raw_embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
+    # ── 🛠️ INITIALIZE CHAT AND EMBEDDING ENGINES FOR RAGAS (Groq) ───────────
+    # Use ragas.llm_factory to create an Instructor-compatible LLM backed by Groq.
+    from groq import Groq
 
-    # ── 🛠️ WRAP THEM FOR EXPLICIT RAGAS COMPATIBILITY ────────────────────────
-    evaluator_llm = LangchainLLMWrapper(raw_llm)
-    evaluator_embeddings = LangchainEmbeddingsWrapper(raw_embeddings)
+    if not os.getenv("GROQ_API_KEY"):
+        raise ValueError("GROQ_API_KEY not found in .env — set it to run Groq-based evals")
+
+    # Instructor expects a provider client with a certain interface.
+    # The instructor library can create a compatible client for Groq providers.
+    try:
+        import instructor
+
+        # Use instructor to build a provider client (handles adapter surface)
+        instructor_client = instructor.from_provider(
+            "groq/llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY")
+        )
+
+        evaluator_llm = llm_factory(
+            "llama-3.3-70b-versatile",
+            provider="groq",
+            client=instructor_client,
+        )
+    except Exception:
+        # Fall back to raw Groq client and show actionable error if incompatible
+        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        try:
+            evaluator_llm = llm_factory(
+                "llama-3.3-70b-versatile",
+                provider="groq",
+                client=groq_client,
+            )
+        except Exception as e:
+            raise RuntimeError(
+                "Failed to initialize a Groq-backed Instructor LLM. "
+                "Install or configure the `instructor` helper for Groq, or ensure your Groq client is compatible. "
+                f"Inner error: {e}"
+            )
+
+    from ragas.embeddings.base import embedding_factory
+
+# create a modern HuggingFace embedding compatible with RAGAS
+    evaluator_embeddings = embedding_factory(
+        "huggingface",
+        model="sentence-transformers/all-MiniLM-L6-v2",
+        interface="modern"
+    )
 
     print("Calculating RAGAS metrics in the cloud via Groq...")
+    faithfulness_metric = Faithfulness(llm=evaluator_llm)
+    answer_relevancy_metric = AnswerRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
+    context_precision_metric = ContextPrecision(llm=evaluator_llm)
+
     scores = evaluate(
         dataset=dataset,
-        # 🛠️ PASS THE PROPERLY WRAPPED INSTANCES INTO EACH CONSTRUCTOR INDIVIDUALLY
         metrics=[
-            Faithfulness(llm=evaluator_llm), 
-            AnswerRelevancy(llm=evaluator_llm), 
-            ContextPrecision(llm=evaluator_llm)
+            faithfulness_metric,
+            answer_relevancy_metric,
+            context_precision_metric,
         ],
-        llm=evaluator_llm,             
-        embeddings=evaluator_embeddings 
     )
     
     print("\nFINAL EVALUATION SCORES")
@@ -184,4 +222,3 @@ if __name__ == "__main__":
         os.system("pip install groq")
         
     run_custom_evaluations()
-"""

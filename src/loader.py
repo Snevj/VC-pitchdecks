@@ -6,6 +6,8 @@ Extracts raw text from a PDF file, page by page.
 import os
 import unicodedata
 import pymupdf
+from langsmith_helper import get_traceable
+traceable = get_traceable()
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 pdf_path = os.path.join(BASE_DIR, "data", "myfile.pdf")
