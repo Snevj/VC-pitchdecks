@@ -1,113 +1,151 @@
 """
+run_evals.py
+Evaluates the FinRAG pipeline using RAGAS v0.4 ascore pattern.
+Sequential execution with rate-limit-aware delays for Groq free tier.
+"""
+
 import os
 import json
+import asyncio
+import pandas as pd
 from dotenv import load_dotenv
 load_dotenv()
 
-from datasets import Dataset
-from ragas import evaluate
+from openai import AsyncOpenAI
+from ragas import SingleTurnSample
+from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
 from ragas.llms import llm_factory
 from ragas.embeddings import HuggingFaceEmbeddings as RagasHFEmbeddings
-from openai import OpenAI
-from ragas.llms import LangchainLLMWrapper
-from ragas.embeddings import LangchainEmbeddingsWrapper
-from ragas.metrics.collections import Faithfulness, AnswerRelevancy, ContextPrecision
-from langchain_groq import ChatGroq
-from langchain_huggingface import HuggingFaceEmbeddings
+
 from src.retriever import retrieve_and_rerank
 from src.generator import generate_with_citations
 
+# ── 🛠️ GROQ ASYNC CLIENT ─────────────────────────────────────────────────────
+if not os.getenv("GROQ_API_KEY"):
+    raise ValueError("GROQ_API_KEY not found in .env")
 
-def evaluate_pipeline():
-    print("Loading test evaluation dataset...")
+groq_openai_client = AsyncOpenAI(
+    api_key=os.getenv("GROQ_API_KEY"),
+    base_url="https://api.groq.com/openai/v1"
+)
+
+evaluator_llm = llm_factory(
+    model="llama-3.1-8b-instant",
+    client=groq_openai_client
+)
+print(f"✅ Evaluator LLM ready: {type(evaluator_llm).__name__}")
+
+# ── 🛠️ EMBEDDINGS ────────────────────────────────────────────────────────────
+evaluator_embeddings = RagasHFEmbeddings(
+    model="sentence-transformers/all-MiniLM-L6-v2"
+)
+
+# ── 🛠️ METRICS ───────────────────────────────────────────────────────────────
+faithfulness_metric      = Faithfulness(llm=evaluator_llm)
+answer_relevancy_metric  = AnswerRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
+context_precision_metric = ContextPrecision(llm=evaluator_llm)
+print("✅ All metrics instantiated successfully")
+
+# ── 🛠️ RATE-LIMIT-AWARE METRIC SCORER ────────────────────────────────────────
+INTER_METRIC_DELAY = 15  # seconds between each metric call — stays under 6k TPM
+
+async def score_with_retry(metric_fn, delay: int = INTER_METRIC_DELAY, **kwargs):
+    """Call ascore with a pre-call delay to respect TPM limits."""
+    await asyncio.sleep(delay)
+    return await metric_fn(**kwargs)
+
+# ── 🛠️ SINGLE ROW EVALUATOR ──────────────────────────────────────────────────
+async def evaluate_row(tc: dict, idx: int, total: int) -> dict:
+    query    = tc["question"]
+    print(f"\n[{idx}/{total}] Evaluating: {query[:80]}...")
+
+    chunks   = retrieve_and_rerank(query, top_k_retrieve=15, top_k_final=3)
+    result   = generate_with_citations(query, chunks)
+    answer   = result["answer"]
+    contexts = [c["text"] for c in chunks]
+
+    print(f"  ⏳ Scoring faithfulness...")
+    f_result = await score_with_retry(
+        faithfulness_metric.ascore,
+        delay=INTER_METRIC_DELAY,
+        user_input=query,
+        response=answer,
+        retrieved_contexts=contexts        # ✅ correct
+    )
+
+    print(f"  ⏳ Scoring answer relevancy...")
+    ar_result = await score_with_retry(
+        answer_relevancy_metric.ascore,
+        delay=INTER_METRIC_DELAY,
+        user_input=query,
+        response=answer                    # ✅ no contexts — AnswerRelevancy doesn't take them
+    )
+
+    print(f"  ⏳ Scoring context precision...")
+    cp_result = await score_with_retry(
+        context_precision_metric.ascore,
+        delay=INTER_METRIC_DELAY,
+        user_input=query,
+        reference=tc["answer"],            # ✅ reference, not response
+        retrieved_contexts=contexts        # ✅ correct
+    )
+
+    print(f"  ✅ F={f_result.value:.3f} | AR={ar_result.value:.3f} | CP={cp_result.value:.3f}")
+
+    return {
+        "question":                 query,
+        "answer":                   answer,
+        "reference":                tc["answer"],
+        "faithfulness":             f_result.value,
+        "answer_relevancy":         ar_result.value,
+        "context_precision":        cp_result.value,
+        "faithfulness_reason":      getattr(f_result,  "reason", ""),
+        "answer_relevancy_reason":  getattr(ar_result, "reason", ""),
+        "context_precision_reason": getattr(cp_result, "reason", ""),
+    }
+# ── 🛠️ MAIN ──────────────────────────────────────────────────────────────────
+async def main():
+    print("\nLoading test evaluation dataset...")
     with open("evals/test_questions.json", "r") as f:
         test_cases = json.load(f)
 
-    evaluation_rows = []
+    total = len(test_cases)
+    print(f"Evaluating {total} questions sequentially (rate-limit safe)...\n")
+    print(f"⏱️  Estimated time: ~{total * 3 * INTER_METRIC_DELAY // 60}–{total * 3 * INTER_METRIC_DELAY // 60 + 2} minutes\n")
 
-    print(f"Running {len(test_cases)} questions through pipeline...")
-    for case in test_cases:
-        query = case["question"]
-        chunks = retrieve_and_rerank(query, top_k_retrieve=15, top_k_final=3)
-        result = generate_with_citations(query, chunks)
+    # ── Sequential execution — prevents TPM burst ─────────────────────────────
+    rows = []
+    for idx, tc in enumerate(test_cases, start=1):
+        row = await evaluate_row(tc, idx, total)
+        rows.append(row)
+        # Extra cooldown between questions (not just between metrics)
+        if idx < total:
+            print(f"  💤 Cooling down 10s before next question...")
+            await asyncio.sleep(10)
 
-        evaluation_rows.append({
-            "question": query,
-            "answer": result["answer"],
-            "contexts": [c["text"] for c in chunks],
-            "ground_truth": case["answer"]
-        })
+    df = pd.DataFrame(rows)
 
-    dataset = Dataset.from_list(evaluation_rows)
-    
-    # ── 🛠️ INITIALIZE CHAT AND EMBEDDING ENGINES FOR RAGAS (Groq) ───────────
-    # Use ragas.llm_factory to create an Instructor-compatible LLM backed by Groq.
-    from groq import Groq
+    # ── Per-question results ──────────────────────────────────────────────────
+    print("\n🏆 FINAL EVALUATION RESULTS")
+    print("─" * 80)
+    print(df[["question", "faithfulness", "answer_relevancy", "context_precision"]].to_string(index=False))
 
-    if not os.getenv("GROQ_API_KEY"):
-        raise ValueError("GROQ_API_KEY not found in .env — set it to run Groq-based evals")
+    # ── Aggregate scores ──────────────────────────────────────────────────────
+    print("\n📊 AGGREGATE SCORES")
+    print("─" * 40)
+    for metric in ["faithfulness", "answer_relevancy", "context_precision"]:
+        score = df[metric].mean()
+        emoji = "🟢" if score >= 0.7 else "🟡" if score >= 0.4 else "🔴"
+        print(f"  {emoji}  {metric:25s}: {score:.4f}")
 
-    # Instructor expects a provider client with a certain interface.
-    # The instructor library can create a compatible client for Groq providers.
-    try:
-        import instructor
-
-        # Use instructor to build a provider client (handles adapter surface)
-        instructor_client = instructor.from_provider(
-            "groq/llama-3.3-70b-versatile", api_key=os.getenv("GROQ_API_KEY")
-        )
-
-        evaluator_llm = llm_factory(
-            "llama-3.3-70b-versatile",
-            provider="groq",
-            client=instructor_client,
-        )
-    except Exception:
-        # Fall back to raw Groq client and show actionable error if incompatible
-        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        try:
-            evaluator_llm = llm_factory(
-                "llama-3.3-70b-versatile",
-                provider="groq",
-                client=groq_client,
-            )
-        except Exception as e:
-            raise RuntimeError(
-                "Failed to initialize a Groq-backed Instructor LLM. "
-                "Install or configure the `instructor` helper for Groq, or ensure your Groq client is compatible. "
-                f"Inner error: {e}"
-            )
-
-    from ragas.embeddings.base import embedding_factory
-
-# create a modern HuggingFace embedding compatible with RAGAS
-    evaluator_embeddings = embedding_factory(
-        "huggingface",
-        model="sentence-transformers/all-MiniLM-L6-v2",
-        interface="modern"
-    )
-
-    print("Calculating RAGAS metrics in the cloud via Groq...")
-    faithfulness_metric = Faithfulness(llm=evaluator_llm)
-    answer_relevancy_metric = AnswerRelevancy(llm=evaluator_llm, embeddings=evaluator_embeddings)
-    context_precision_metric = ContextPrecision(llm=evaluator_llm)
-
-    scores = evaluate(
-        dataset=dataset,
-        metrics=[
-            faithfulness_metric,
-            answer_relevancy_metric,
-            context_precision_metric,
-        ],
-    )
-    
-    print("\nFINAL EVALUATION SCORES")
-    print(json.dumps(scores, indent=4))
-    return scores
-
+    # ── Save results ──────────────────────────────────────────────────────────
+    os.makedirs("experiments", exist_ok=True)
+    output_path = "experiments/finrag_v0.4_results.csv"
+    df.to_csv(output_path, index=False)
+    print(f"\n✅ Full results saved to {output_path}")
 
 if __name__ == "__main__":
-    evaluate_pipeline()
+    asyncio.run(main())
 """
 import os
 import json
@@ -222,3 +260,4 @@ if __name__ == "__main__":
         os.system("pip install groq")
         
     run_custom_evaluations()
+"""

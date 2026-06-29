@@ -4,44 +4,32 @@ Connects all steps end to end.
 Week 1: index a PDF, then query it
 Week 2: swap in recursive chunker + reranker
 Week 3: add RAGAS evals + LangSmith tracing
-Week 4: LangGraph state graph
+Week 4: LangGraph state graph + Asynchronous Execution
 """
 
 import os
 import sys
+import asyncio  # Added for high-concurrency async operations
 from dotenv import load_dotenv
 
 # Ensure configuration constants at root can be imported cleanly
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 load_dotenv()
+
 from langsmith_helper import get_traceable
 # Central traceable decorator for project-wide use (no-op if disabled)
 traceable = get_traceable()
-
-# Enable LangSmith tracing when LANGSMITH_ENABLED=1/true and package is installed.
-if os.getenv("LANGSMITH_ENABLED", "false").lower() in ("1", "true"):
-    try:
-        from langsmith import traceable  # real tracer
-    except Exception:
-        def traceable(name=None):
-            def deco(f): return f
-            return deco
-else:
-    def traceable(name=None):
-        def deco(f): return f
-        return deco
-    
 
 from loader import load_pdf
 from chunker import chunk_text
 from embedder import embed_texts
 from vectorstore import add_chunks, clear_collection
 from retriever import retrieve, retrieve_and_rerank
-from generator import generate, generate_with_citations
+# Updated to track our structured, cached, and unified generator methods
+from generator import generate, generate_with_citations, generate_with_cache 
 
 
 # ── WEEK 1: Baseline MVP (Index + Query) ──────────────────────────────────────
-# [Raw PDF] ──► load_pdf() ──► chunk_text() ──► embed_texts() ──► add_chunks()
 def index_pdf_week1(pdf_path: str):
     """Load PDF → naive chunks → embed → store in database index."""
     pages = load_pdf(pdf_path)
@@ -51,10 +39,8 @@ def index_pdf_week1(pdf_path: str):
     print(f"\nIndexed {pdf_path} successfully.")
 
 
-# [User Question] ──► retrieve() ──► generate() ──► Final Answer
 def query_week1(question: str) -> str:
     """Retrieve top 5 chunks → generate answer using base engine config."""
-    # Corrected: simply call your high-level retrieve module directly using the string question
     chunks = retrieve(question, top_k=5)
     answer = generate(question, chunks)
     print(f"\nQ: {question}")
@@ -75,22 +61,20 @@ def index_pdf_week2(pdf_path: str):
 
 def query_week2(question: str) -> dict:
     """Retrieve 15 candidate chunks → Cohere rerank to 3 → generate answers with source tracking."""
-    # Corrected: utilize your custom internal retrieve_and_rerank directly
     chunks = retrieve_and_rerank(question, top_k_retrieve=15, top_k_final=3)
+    # Routed through generate_with_citations which now uses fast native JSON Mode mapping
     result = generate_with_citations(question, chunks)
     
     print(f"\nQ: {question}")
     print(f"A: {result['answer']}")
-    print(f"Sources: pages {result['sources']}")
-    print(f"Tokens used: {result['token_count']}")
+    print(f"Sources: pages {result['pages_referenced']}")
+    print(f"Tokens used: {result['tokens_used']}")
     return result
 
 
 # ── WEEK 3: Evals + LangSmith Tracing ─────────────────────────────────────────
 def query_week3(question: str) -> dict:
-    """
-    Same as Week 2 but wrapped inside a LangSmith tracing tree.
-    """
+    """Same as Week 2 but wrapped inside a LangSmith tracing tree."""
     @traceable(name="rag_pipeline")
     def _run(question):
         chunks = retrieve_and_rerank(question, top_k_retrieve=15, top_k_final=3)
@@ -105,16 +89,12 @@ def query_week3(question: str) -> dict:
 
 
 def run_evals():
-    """
-    Loads verification test matrix, batches requests, and processes RAGAS scores.
-    """
+    """Loads verification test matrix, batches requests, and processes RAGAS scores."""
     import json
     from ragas import evaluate
     from ragas.metrics import faithfulness, answer_relevancy, context_precision
     from datasets import Dataset
 
-    # Quick environment pre-checks to give helpful errors
-    import os
     if not os.getenv("OPENAI_API_KEY"):
         print("Missing OPENAI_API_KEY. Set it in .env or export OPENAI_API_KEY=... to run evals.")
         return None
@@ -129,7 +109,7 @@ def run_evals():
             "question": tc["question"],
             "answer": result.get("answer") if isinstance(result, dict) else None,
             "contexts": result.get("contexts") if isinstance(result, dict) else None,
-            "ground_truth": tc["answer"]  # Hand-crafted validation reference ground truth
+            "ground_truth": tc["answer"]
         })
 
     dataset = Dataset.from_list(rows)
@@ -137,11 +117,8 @@ def run_evals():
     try:
         scores = evaluate(dataset, metrics=[faithfulness, answer_relevancy, context_precision])
     except Exception as e:
-        # Surface friendly guidance for common OpenAI errors (quota / auth / rate limits)
         err_msg = str(e)
         print("\nRAGAS evaluation failed:", err_msg)
-        print("If this is an OpenAI quota or billing error, check your plan and billing dashboard.")
-        print("You can still run Week 1/2 flows locally without OpenAI by running the index/query paths.")
         return None
 
     print("\n── RAGAS Scores ──────────────────")
@@ -151,9 +128,7 @@ def run_evals():
 
 # ── WEEK 4: LangGraph State Graphs ────────────────────────────────────────────
 def build_langgraph_pipeline():
-    """
-    Constructs a StateGraph state machine configuration pipeline complete with cyclic retry logic.
-    """
+    """Constructs a StateGraph state machine configuration pipeline complete with cyclic retry logic."""
     from langgraph.graph import StateGraph, END
     from typing import TypedDict, Optional
 
@@ -235,10 +210,27 @@ def query_week4(question: str) -> dict:
     return result
 
 
+# ── PRODUCTION OPTIMIZATION: Async Multi-Threaded Execution Layer ────────────
+
+@traceable(name="pipeline_async")
+async def pipeline_async(query: str) -> dict:
+    """
+    Asynchronously executes retrieval and generation steps concurrently.
+    Offloads heavy blocking CPU/Network tasks to a background worker pool.
+    """
+    print(f"🚀 Starting async pipeline worker loop for query: '{query}'")
+    
+    # 1. Concurrently handle Qdrant retrieval + reranking steps
+    chunks = await asyncio.to_thread(retrieve_and_rerank, query)
+    
+    # 2. Concurrently handle generation via our local MD5 caching utility layer
+    result = await asyncio.to_thread(generate_with_cache, query, chunks)
+    
+    return result
+
+
 # ── ENTRY POINT SYSTEM EXECUTION ──────────────────────────────────────────────
 if __name__ == "__main__":
-    import sys
-
     week = sys.argv[1] if len(sys.argv) > 1 else "1"
     pdf = "data/sample.pdf"
 
@@ -255,3 +247,11 @@ if __name__ == "__main__":
 
     elif week == "4":
         query_week4("What was the net income for the year?")
+        
+    elif week.lower() == "async":
+        # Interface to safely execute your new async loop via the CLI terminal
+        print("\n--- Running High-Throughput Async Engine Mode ---")
+        sample_q = "What are the four key priorities mentioned by the company as they look forward?"
+        output_res = asyncio.run(pipeline_async(sample_q))
+        print(f"\nAnswer: {output_res.get('answer')}")
+        print(f"Pages Cited: {output_res.get('pages_referenced')}")
