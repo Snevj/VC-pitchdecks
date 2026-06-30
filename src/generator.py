@@ -25,6 +25,10 @@ def generate_with_citations(query: str, retrieved_chunks: list) -> dict:
     
     system_instruction = (
         "You are an elite financial analyst. Answer the user's question using ONLY the provided context blocks.\n"
+        "CRITICAL: If the context does not contain enough information to fully answer the question, "
+        "you MUST say so explicitly rather than inferring, generalizing, or drawing on outside knowledge. "
+        "Never state a fact, figure, trend, or claim that is not explicitly present in the context blocks above, "
+        "even if it seems plausible or commonly known.\n\n"
         "Your output MUST be a valid JSON object matching this exact schema:\n"
         "{\n"
         '  "answer": "Your detailed answer string here",\n'

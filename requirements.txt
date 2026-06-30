@@ -17,3 +17,4 @@ python-dotenv==1.0.1
 rich==13.8.1
 audioop-lts==0.2.2
 langsmith
+rank_bm25

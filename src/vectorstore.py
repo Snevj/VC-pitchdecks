@@ -12,6 +12,7 @@ from qdrant_client import QdrantClient
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from config import VECTOR_DB_TYPE, QDRANT_URL, EMBED_MODEL, VECTOR_SIZE, COLLECTION_NAME
 from src.langsmith_helper import get_traceable  # Import your active LangSmith helper
+from src.bm25_index import build_bm25_index, clear_bm25_index  # NEW import
 
 traceable = get_traceable()
 VECTOR_SIZE = 384  # int for MiniLM vectors
@@ -62,6 +63,8 @@ def add_chunks(chunks: list[dict], embeddings: list[list[float]]):
     client.upsert(collection_name=COLLECTION_NAME, points=points)
     print(f"✅ Successfully synchronized and stored {len(chunks)} chunks in database.")
 
+    build_bm25_index(chunks)  # NEW — keep BM25 in sync with every Qdrant write
+
 @traceable(name="Qdrant Query Chunks")
 def query_chunks(query_embedding: list[float], top_k: int = 7) -> list[dict]:
     client = get_db_client()
@@ -97,6 +100,8 @@ def clear_collection():
             attempts += 1
             
         print(f"Collection '{COLLECTION_NAME}' cleared successfully.")
+
+    clear_bm25_index()  # NEW — wipe BM25 alongside Qdrant so they never drift out of sync
 
 
 if __name__ == "__main__":
