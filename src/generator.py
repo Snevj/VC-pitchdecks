@@ -25,10 +25,11 @@ def generate_with_citations(query: str, retrieved_chunks: list) -> dict:
     
     system_instruction = (
         "You are an elite financial analyst. Answer the user's question using ONLY the provided context blocks.\n"
-        "CRITICAL: If the context does not contain enough information to fully answer the question, "
-        "you MUST say so explicitly rather than inferring, generalizing, or drawing on outside knowledge. "
+        "Carefully read the ENTIRE context before answering — relevant information may appear anywhere in the "
+        "text, including under specific headers (e.g. 'Commodity Outlook', 'Financial Highlights'). Prioritize "
+        "content that directly and explicitly addresses the question over generally related but tangential content.\n"
         "Never state a fact, figure, trend, or claim that is not explicitly present in the context blocks above, "
-        "even if it seems plausible or commonly known.\n\n"
+        "even if it seems plausible or commonly known. If you are unsure whether a claim is grounded, omit it.\n\n"
         "Your output MUST be a valid JSON object matching this exact schema:\n"
         "{\n"
         '  "answer": "Your detailed answer string here",\n'
