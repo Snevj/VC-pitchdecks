@@ -28,10 +28,18 @@ def retrieve(query: str, top_k: int = 5) -> list[dict]:
 
 
 @traceable(name="retrieve_and_rerank")
-def retrieve_and_rerank(query: str, top_k_retrieve: int = 15, top_k_final: int = 2) -> list[dict]:
+def retrieve_and_rerank(
+    query: str,
+    top_k_retrieve: int = 15,
+    top_k_final: int = 4,
+    relevance_threshold: float = 0.3,
+) -> list[dict]:
     """
     Step 1: retrieve top 15 chunks from ChromaDB/Qdrant (broad net)
-    Step 2: Cohere Rerank compresses them to top 2 (precision)
+    Step 2: Cohere Rerank scores all candidates; chunks below
+            relevance_threshold are dropped before slicing to top_k_final.
+            Falls back to the single best chunk if everything is below threshold,
+            so the LLM never receives an empty context.
     """
     import os
     import cohere
@@ -43,17 +51,29 @@ def retrieve_and_rerank(query: str, top_k_retrieve: int = 15, top_k_final: int =
     chunks = query_chunks(query_embedding, top_k=top_k_retrieve)
     texts = [c["text"] for c in chunks]
 
-    # reranking process of the chunks retrieved from the first step
+    # reranking process — request scores for ALL candidates, not just top_k_final,
+    # so we can filter by relevance before truncating
     co = cohere.Client(os.getenv("COHERE_API_KEY"))
     rerank_results = co.rerank(
         model="rerank-english-v3.0",
         query=query,
         documents=texts,
-        top_n=top_k_final
+        top_n=len(texts)
     )
 
+    # filter out low-relevance chunks first, then take top_k_final of what's left
+    filtered = [r for r in rerank_results.results if r.relevance_score >= relevance_threshold]
+
+    if not filtered:
+        # nothing cleared the bar — fall back to the single best chunk
+        # rather than handing the LLM an empty context
+        filtered = [rerank_results.results[0]]
+        print(f"  ⚠️  No chunks cleared threshold {relevance_threshold}; falling back to best match (score {filtered[0].relevance_score:.4f})")
+
+    selected = filtered[:top_k_final]
+
     reranked = []
-    for r in rerank_results.results:
+    for r in selected:
         original_chunk = chunks[r.index]
         reranked.append({
             "text": original_chunk["text"],
@@ -67,7 +87,6 @@ def retrieve_and_rerank(query: str, top_k_retrieve: int = 15, top_k_final: int =
         print(f"  [{i+1}] page {c['page_num']} | rerank score {c['score']} | {c['text'][:80]}...")
 
     return reranked
-
 
 if __name__ == "__main__":
     # Week 1 test
